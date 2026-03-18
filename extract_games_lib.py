@@ -25,8 +25,7 @@ GAMES.LIB FORMAT REFERENCE
 Background
 ----------
 GAMES.LIB ships on the Muppets Inside CD-ROM (Starwave, 1996). It holds all
-assets for the four mini-games: Beaker's Laboratory, Swedish Chef's Kitchen of
-Doom, Clifford the Dog, and Gonzo's Show.
+assets for the mini-games, including The Swedish Chef's Kitchen of Doom.
 
 The first 5 bytes match the InstallShield cabinet signature (13 5D 65 8C 3A),
 but the rest of the format is entirely proprietary. Standard tools (unshield,
