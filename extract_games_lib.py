@@ -148,7 +148,7 @@ Validation (known-plaintext):
 	Decompresses to: "60\r\n70\r\n-1\r\n0\r\n0\r\n100\r\n300\r\n180\r\n100\r\n1 620 180\r\n"
 
 ───────────────────────────────────────────────────────────────────────────────
-SECTION 6 - OTHER FILES
+SECTION 6 — OTHER FILES
 ───────────────────────────────────────────────────────────────────────────────
 
 Same script also happens to work on _SETUP.LIB to get a few extra bitmaps.
