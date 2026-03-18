@@ -147,6 +147,19 @@ Validation (known-plaintext):
 	WAVEMIX.INI — data_offset=0xCA9A1A, compressed=36 bytes, uncompressed=49
 	Decompresses to: "60\r\n70\r\n-1\r\n0\r\n0\r\n100\r\n300\r\n180\r\n100\r\n1 620 180\r\n"
 
+───────────────────────────────────────────────────────────────────────────────
+SECTION 6 - OTHER FILES
+───────────────────────────────────────────────────────────────────────────────
+
+Same script also happens to work on _SETUP.LIB to get a few extra bitmaps.
+Extracts MuppetSE.DLL from DLLS.LIB as well.
+
+The CDX files on the disc are actually AVIs using CinePak video compression.
+ffmpeg will convert them directly:
+ffmpeg -i CNV53BDK.CDX -c:v libx264 -pix_fmt yuv420p -c:a aac -b:a 128k MuppetsInside.mp4
+
+The Swedish Chef's Kitchen of Doom's sounds are WAVs under 5\SOUNDS
+
 ===============================================================================
 END OF FORMAT REFERENCE
 ===============================================================================
