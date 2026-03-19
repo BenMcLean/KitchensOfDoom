@@ -978,3 +978,151 @@ For implementing the sound system, the two-letter enemy abbreviations used in bo
 | `PO` | Potato | `potato` |
 | `TO` | Tomato | `tomato` |
 | `WM` | Watermelon | `watermellon` (note: double-l in BLK) |
+
+---
+
+## 17. Enemy Movement and Collision
+
+### 17.1 Enemy Speed
+
+`[blk:01–10]` Each `action` entry includes a `speed` property with an inline scale comment:
+
+```
+speed = 75; { 0 is still, 25 is very slow, 50 is ok, 100 is fast }
+```
+
+The scale is: **0** = stationary · **25** = very slow · **50** = moderate · **100** = fast. This is an opaque integer unit whose exact mapping to tiles/second is hardcoded in the engine.
+
+| Enemy | Speed | Relative pace |
+|-------|-------|---------------|
+| Tomato | 100 | Fastest |
+| Carrot | 75 | Fast |
+| Cucumber | 75 | Fast |
+| Cheese | 75 | Fast |
+| Egg | 75 | Fast |
+| Potato | 75 | Fast |
+| Cabbage | 50 | Moderate |
+| Lemon | 50 | Moderate |
+| Cauliflower | 25 | Very slow |
+| Watermelon | 25 | Very slow |
+
+**Design note:** Tomato is simultaneously the fastest enemy (speed=100), the toughest at high difficulty (up to 6 wisk hits at skill 3), and the only weapon that always kills it in 1 hit is the Pastry Gun. Level 9 contains only Tomatoes and only a Pastry Gun pickup — a deliberate difficulty spike.
+
+Player speed is not present in the BLK file format; it is hardcoded in `bork.exe`.
+
+### 17.2 Enemy Collision Radius
+
+`[blk:01–10]` Each `action` entry includes a `radius` property (a floating-point value in cell units where 1.0 = full cell width). This is the radius of the enemy's collision circle used for both wall collision and player-proximity checks.
+
+| Enemy | Radius (standard) |
+|-------|-------------------|
+| Cauliflower | 1.00 |
+| Watermelon | 0.99 |
+| Tomato | 0.98 |
+| Potato | 0.97 |
+| Cheese | 0.96 |
+| Lemon | 0.95 |
+| Egg | 0.94 |
+| Cabbage | 0.93 |
+| Cucumber | 0.93 |
+| Carrot | 0.92 |
+
+`[blk:07]` **Level 7 exception:** In LEVEL07.BLK, the Egg has `radius = 0.40` and the Potato has `radius = 0.70` — significantly smaller than their standard values in all other levels. This makes both enemies much harder to hit with projectiles in Level 7. This appears to be an intentional per-level difficulty adjustment, as all other properties (speed, HP, anims) remain unchanged.
+
+### 17.3 Collision Flags (Thing Entry)
+
+`[blk:01]` Enemy `thing` entries carry three flags that govern different aspects of collision:
+
+| Flag | Present on enemies | Present on weapon pickups | Meaning |
+|------|--------------------|--------------------------|---------|
+| `set hitable` | Yes | No | Can be targeted and hit by the player's projectile weapons |
+| `set wall` | Yes | No | Solid obstacle: blocks player movement using radius-based circle collision |
+| `set trans` | Yes | Yes | Sprite uses palette transparency; also marks the thing cell as traversable for map-parsing purposes (see Section 8) |
+
+Weapon pickup `thing` entries carry only `set trans`. The player collects a pickup by walking into its cell — no separate interaction is needed, and the pickup has no collision circle.
+
+---
+
+## 18. Sprite Animation System
+
+### 18.1 Anim Entry Format (Full Detail)
+
+`[blk:01–10]` Each `anim` entry defines one animation clip. The three properties are:
+
+| Property | Meaning |
+|----------|---------|
+| `panel` | Base filename path (relative to `chef/`, no extension, no frame/view digits) |
+| `frames` | Number of sequential frames in the animation |
+| `views` | Number of viewing-angle variants (1 = omnidirectional; 3 = directional) |
+
+### 18.2 Sprite File Naming Convention
+
+`[foods/]` Sprite files are named by appending a two-digit suffix to the `panel` base name:
+
+```
+{panel}{view_digit}{frame_digit}.PCX
+```
+
+- `view_digit` is 0 to (views − 1)
+- `frame_digit` is 0 to (frames − 1)
+
+**Examples for Carrot walk anim** (`panel = foods\ca_wlk`, frames=3, views=3):
+
+```
+CA_WLK00.PCX   (view 0, frame 0)
+CA_WLK01.PCX   (view 0, frame 1)
+CA_WLK02.PCX   (view 0, frame 2)
+CA_WLK10.PCX   (view 1, frame 0)
+CA_WLK11.PCX   (view 1, frame 1)
+CA_WLK12.PCX   (view 1, frame 2)
+CA_WLK20.PCX   (view 2, frame 0)
+CA_WLK21.PCX   (view 2, frame 1)
+CA_WLK22.PCX   (view 2, frame 2)
+```
+
+**Examples for Carrot throw anim** (`panel = foods\ca_thr`, frames=3, views=1):
+
+```
+CA_THR00.PCX   (view 0, frame 0)
+CA_THR01.PCX   (view 0, frame 1)
+CA_THR02.PCX   (view 0, frame 2)
+```
+
+For views=1 animations, the view digit is always `0`. The engine selects the view digit at runtime based on the angle between the camera and the enemy; which view index maps to which angle range is hardcoded in `bork.exe` (not represented in the BLK format).
+
+`[blk:01]` The `thing` entry for an enemy uses `panel = foods\{code}_wlk00` — this is the static map-editor/palette sprite, hardcoded to view 0, frame 0 of the walk animation.
+
+### 18.3 AI State to Animation Mapping
+
+`[blk:01–10]` The `action` entry bridges AI states to anim IDs via five named properties:
+
+| Property | AI State(s) | Views | Notes |
+|----------|-------------|-------|-------|
+| `walk_anim` | `WANDER`, `CHASE` | 3 | Directional walking; view selected by camera angle |
+| `throw_anim` | `CHASE` (attacking) | 1 | Played during an attack; not directional |
+| `talk_anim` | `TALK` | 1 | Plays when enemy spots the player; sighting voice line plays concurrently |
+| `die_anim` | `DYING` | 1 | Death sequence; plays once through |
+| `dead_anim` | `DEAD` | 1 | Single-frame idle displayed while enemy is an edible food item on the floor |
+
+There is no dedicated `idle_anim`; the `WAITING` state presumably displays the first frame of `walk_anim` (view 0, frame 0) as a static sprite. This is consistent with the `thing` entry using `_wlk00` as its panel.
+
+The `EATEN` state removes the entity entirely — no sprite is displayed.
+
+### 18.4 Per-Enemy Animation Frame Counts
+
+`[blk:01–10]` `[foods/]` Frame counts vary per enemy and per animation type. All walk animations use 3 views × 3 frames = 9 PCX files. All `dead_anim` (FNL) entries use 1 frame × 1 view = 1 PCX file.
+
+| Enemy | WLK files (v×f) | THR frames | TLK frames | DIE frames |
+|-------|-----------------|------------|------------|------------|
+| Carrot | 3×3 = 9 | 3 | 3 | 5 |
+| Cabbage | 3×3 = 9 | 3 | 3 | 5 |
+| Cauliflower | 3×3 = 9 | 3 | 3 | 3 |
+| Cucumber | 3×3 = 9 | 3 | 3 | 3 |
+| Cheese | 3×3 = 9 | 3 | 3 | 5 |
+| Egg | 3×3 = 9 | **4** | **5** | 5 |
+| Lemon | 3×3 = 9 | 3 | 3 | 3 |
+| Potato | 3×3 = 9 | 3 | 3 | 3 |
+| Tomato | 3×3 = 9 | 3 | 3 | 3 |
+| Watermelon | 3×3 = 9 | 3 | 3 | 3 |
+
+`[foods/]` The Egg is the only enemy with non-standard frame counts: 4 throw frames and 5 talk frames. An additional unnumbered file `EG_THR.PCX` also exists in `FOODS/` alongside the numbered frames; its purpose is unknown (possibly a debug or legacy file). The DIE animation length (3 vs 5 frames) may correspond to animation complexity: carrot, cabbage, cheese, cucumber, and egg have 5-frame deaths; the remaining five enemies have 3-frame deaths.
