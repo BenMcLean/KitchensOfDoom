@@ -840,7 +840,7 @@ After the EATEN transition:
 - `snd_really_burp()` is called for a second, more emphatic burp
 - The enemy entity is removed from the map
 
-This mechanic replaces the separate health-pickup-drop system used in most Wolf3D-style games: the enemy body itself is the health pickup.
+This mechanic replaces the separate pickup-drop system used in most Wolf3D-style games: the enemy body itself is the health pickup.
 
 `[strings]` The `SPLAT` state also appears in the AI state machine strings in `bork.exe`. It is associated with the function `snd_splat_chef()` and may represent the player's death animation (the chef being flattened) rather than an enemy state.
 
