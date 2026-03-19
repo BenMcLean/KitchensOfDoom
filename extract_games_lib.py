@@ -25,7 +25,10 @@ GAMES.LIB FORMAT REFERENCE
 Background
 ----------
 GAMES.LIB ships on the Muppets Inside CD-ROM (Starwave, 1996). It holds all
-assets for the mini-games, including The Swedish Chef's Kitchen of Doom.
+assets for the mini-games, including The Swedish Chef's Kitchens of Doom.
+
+The work this script does is done for you by the installer
+but it's still neat to have discovered how it works.
 
 The first 5 bytes match the InstallShield cabinet signature (13 5D 65 8C 3A),
 but the rest of the format is entirely proprietary. Standard tools (unshield,
@@ -105,18 +108,20 @@ SECTION 4 — FILE TABLE (starts at 0xDEBC73)
 
 4a. Preamble — 29 bytes (0xDEBC73–0xDEBC8F)
 	The first 29 bytes are a table header whose full meaning is not decoded.
-	Bytes 4–5 contain 0xCC 0x01 (= 460), possibly a partial file count.
 	Skip these 29 bytes unconditionally to reach the first file entry.
 
 4b. File entries (variable length, tightly packed, no padding between them)
-	Advance (N + 43) bytes after each entry. Total valid entries: 642.
+	Advance (N + 43) bytes after each entry. Total valid entries: 542.
 
 	Offset   Size  Field
 	────────────────────────────────────────────────────────────────────────
 	 0        1    name_length  (N)
 	 1        N    filename     ASCII, uppercase, no path, no null terminator
 	N+1      14    null_padding ALWAYS 14 zero bytes — structural anchor
-	N+15      2    dir_index    uint16 LE — index into the directory table
+	N+15      2    dir_index    uint16 LE — directory index for the *next* file entry.
+							  The first entry in the table is implicitly in
+							  directory 0; all others inherit the dir_index
+							  stored in the preceding entry.
 	N+17      4    uncompressed_size  uint32 LE
 	N+21      4    compressed_size   uint32 LE
 	N+25      4    data_offset       uint32 LE — absolute offset in GAMES.LIB
@@ -158,7 +163,8 @@ The CDX files on the disc are actually AVIs using CinePak video compression.
 ffmpeg will convert them directly:
 ffmpeg -i CNV53BDK.CDX -c:v libx264 -pix_fmt yuv420p -c:a aac -b:a 128k MuppetsInside.mp4
 
-The Swedish Chef's Kitchen of Doom's sounds are WAVs under 5\SOUNDS
+The Swedish Chef's Kitchens of Doom's sounds are WAVs in the 5\SOUNDS
+directory on the CD itself (not inside any archive).
 
 ===============================================================================
 END OF FORMAT REFERENCE
@@ -243,6 +249,7 @@ def main():
 	print("  file_table_start = 0x%X  preamble = %d bytes\n" % (file_table_start, preamble))
 
 	files = []
+	prev_dir_index = 0   # first entry is implicitly in directory 0
 
 	while off + 43 < len(raw):
 		N = raw[off]
@@ -268,9 +275,10 @@ def main():
 				and 0 < compressed_size <= uncompressed_size <= 50_000_000
 				and raw[data_offset] == 0x00
 				and raw[data_offset + 1] == 0x06):
-			dir_name = dirs[dir_index] if dir_index < len(dirs) else ("dir%d" % dir_index)
+			dir_name = dirs[prev_dir_index] if prev_dir_index < len(dirs) else ("dir%d" % prev_dir_index)
 			files.append((filename, dir_name, uncompressed_size, compressed_size, data_offset))
 
+		prev_dir_index = dir_index   # dir_index names the directory for the *next* entry
 		off += N + 43
 
 	print("=== File table: %d valid entries ===\n" % len(files))
