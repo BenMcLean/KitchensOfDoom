@@ -1,0 +1,25 @@
+<Project Sdk="Microsoft.NET.Sdk">
+	<PropertyGroup>
+		<TargetFramework>net8.0</TargetFramework>
+		<IsPackable>false</IsPackable>
+		<Nullable>enable</Nullable>
+		<ImplicitUsings>enable</ImplicitUsings>
+	</PropertyGroup>
+	<ItemGroup>
+	  <None Remove="GAMEMAPS.WL1" />
+	  <None Remove="MAPHEAD.WL1" />
+	</ItemGroup>
+	<ItemGroup>
+	  <EmbeddedResource Include="GAMEMAPS.WL1" />
+	  <EmbeddedResource Include="MAPHEAD.WL1" />
+	</ItemGroup>
+	<ItemGroup>
+		<PackageReference Include="xunit" Version="2.*" />
+		<PackageReference Include="xunit.runner.visualstudio" Version="2.*" />
+		<PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.*" />
+	</ItemGroup>
+	<ItemGroup>
+		<ProjectReference Include="..\KitchensOfDoom\KitchensOfDoom.csproj" />
+		<ProjectReference Include="..\..\BenMcLean.Wolf3D\src\BenMcLean.Wolf3D.Assets\BenMcLean.Wolf3D.Assets.csproj" />
+	</ItemGroup>
+</Project>

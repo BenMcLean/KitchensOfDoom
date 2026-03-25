@@ -5,6 +5,8 @@ VisualStudioVersion = 17.14.37111.16
 MinimumVisualStudioVersion = 10.0.40219.1
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "KitchensOfDoom", "KitchensOfDoom\KitchensOfDoom.csproj", "{DEF79147-5EEF-4B0D-A55B-ADBB4E490728}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "KitchensOfDoom.Test", "KitchensOfDoom.Test\KitchensOfDoom.Test.csproj", "{A1B2C3D4-E5F6-7890-ABCD-EF1234567890}"
+EndProject
 Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Solution Items", "Solution Items", "{8EC462FD-D22E-90A8-E5CE-7E832BA40C5D}"
 	ProjectSection(SolutionItems) = preProject
 		.editorconfig = .editorconfig
@@ -26,6 +28,10 @@ Global
 		{DEF79147-5EEF-4B0D-A55B-ADBB4E490728}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{DEF79147-5EEF-4B0D-A55B-ADBB4E490728}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{DEF79147-5EEF-4B0D-A55B-ADBB4E490728}.Release|Any CPU.Build.0 = Release|Any CPU
+		{A1B2C3D4-E5F6-7890-ABCD-EF1234567890}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{A1B2C3D4-E5F6-7890-ABCD-EF1234567890}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{A1B2C3D4-E5F6-7890-ABCD-EF1234567890}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{A1B2C3D4-E5F6-7890-ABCD-EF1234567890}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
