@@ -4,26 +4,32 @@ public static class GameMaps
 {
 	// ── Constants ────────────────────────────────────────────────────────────
 
-	private const ushort GridSize   = 256;
-	private const byte   VoidCell   = 0xFF;
-	private const ushort RlewTag    = 0xABCD;
+	private const ushort GridSize = 256;
+	private const byte VoidCell = 0xFF;
+	private const ushort RlewTag = 0xABCD;
 
 	// Carmack compression tags — match GameMap.CARMACK_NEAR / CARMACK_FAR
 	// BenMcLean.Wolf3D.Assets.Gameplay.GameMap (ID_CA.C)
 	private const byte CarmackNear = 0xA7;
-	private const byte CarmackFar  = 0xA8;
+	private const byte CarmackFar = 0xA8;
 
 	// Wolf3D object-plane player spawn codes (WL_MAIN.C:SpawnPlayer)
 	private const ushort SpawnNorth = 19;
-	private const ushort SpawnEast  = 20;
+	private const ushort SpawnEast = 20;
 	private const ushort SpawnSouth = 21;
-	private const ushort SpawnWest  = 22;
+	private const ushort SpawnWest = 22;
 
 	// 38 bytes of typed fields + 4 bytes "!ID!" = 42 total
 	private const int LevelHeaderSize = 42;
 
 	private static readonly (int dx, int dy)[] Directions =
 		[(-1, 0), (1, 0), (0, -1), (0, 1)];
+
+	/// <summary>
+	/// A single pre-baked wall face spawn for the WALLSPAWNS file.
+	/// Mirrors MapAnalyzer.MapAnalysis.WallSpawn but without the Assets project dependency.
+	/// </summary>
+	private record struct WallSpawnData(ushort X, ushort Y, ushort Shape, bool FacesEastWest, bool Flip);
 
 	// ── Public data record ───────────────────────────────────────────────────
 
@@ -32,9 +38,9 @@ public static class GameMaps
 	/// Compression is applied inside WriteGameMaps.
 	/// </summary>
 	public record LevelData(
-		string   Name,
-		ushort   Width,
-		ushort   Height,       // Wolf3D "height" = Y depth
+		string Name,
+		ushort Width,
+		ushort Height,       // Wolf3D "height" = Y depth
 		ushort[] WallPlane,    // plane 0 — W×H tile numbers
 		ushort[] ObjectPlane,  // plane 1 — spawn codes and objects
 		ushort[] OtherPlane    // plane 2 — area / floor codes
@@ -56,7 +62,7 @@ public static class GameMaps
 	public static uint[] WriteGameMaps(Stream stream, LevelData[] levels)
 	{
 		uint[] levelHeaderOffsets = new uint[levels.Length];
-		uint   currentOffset      = 0;
+		uint currentOffset = 0;
 
 		using BinaryWriter writer = new(stream, System.Text.Encoding.ASCII, leaveOpen: true);
 
@@ -69,10 +75,10 @@ public static class GameMaps
 			byte[] plane1 = CarmackCompress(RlewCompress(level.ObjectPlane));
 			byte[] plane2 = CarmackCompress(RlewCompress(level.OtherPlane));
 
-			uint plane0Offset  = currentOffset;
-			uint plane1Offset  = plane0Offset + (uint)plane0.Length;
-			uint plane2Offset  = plane1Offset + (uint)plane1.Length;
-			uint headerOffset  = plane2Offset + (uint)plane2.Length;
+			uint plane0Offset = currentOffset;
+			uint plane1Offset = plane0Offset + (uint)plane0.Length;
+			uint plane2Offset = plane1Offset + (uint)plane1.Length;
+			uint headerOffset = plane2Offset + (uint)plane2.Length;
 
 			levelHeaderOffsets[i] = headerOffset; // header follows its own plane data
 
@@ -119,15 +125,64 @@ public static class GameMaps
 		writer.Write((uint)0); // terminator — GameMap.ParseMapHead reads until 0
 	}
 
+	/// <summary>
+	/// Writes a WALLSPAWNS binary file containing pre-baked per-face wall spawn data.
+	/// <para>
+	/// KOD's I3D engine assigns a distinct texture to each cardinal face of each block type
+	/// (n_wall, e_wall, s_wall, w_wall in .BLK files). The standard Wolf3D tile-to-page
+	/// formula cannot represent this, so face textures are baked here at conversion time.
+	/// MapAnalysis loads these spawns and skips its normal EastWest/NorthSouth wall scan.
+	/// </para>
+	/// <para>
+	/// File format: [ushort levelCount][uint[] offsets][level data...]
+	/// Per level at its offset: [ushort count][count * (ushort X, ushort Y, ushort Shape, byte flags)]
+	/// flags: bit 0 = FacesEastWest, bit 1 = Flip
+	/// </para>
+	/// </summary>
+	private static void WriteWallSpawns(Stream stream, WallSpawnData[][] spawnsByLevel)
+	{
+		using BinaryWriter writer = new(stream, System.Text.Encoding.ASCII, leaveOpen: true);
+		ushort levelCount = (ushort)spawnsByLevel.Length;
+		writer.Write(levelCount);
+
+		// Write placeholder offsets; we'll seek back to fill them in.
+		long offsetTablePos = stream.Position;
+		for (int i = 0; i < levelCount; i++)
+			writer.Write((uint)0);
+
+		uint[] offsets = new uint[levelCount];
+		for (int i = 0; i < levelCount; i++)
+		{
+			offsets[i] = (uint)stream.Position;
+			WallSpawnData[] spawns = spawnsByLevel[i];
+			writer.Write((ushort)spawns.Length);
+			foreach (WallSpawnData s in spawns)
+			{
+				writer.Write(s.X);
+				writer.Write(s.Y);
+				writer.Write(s.Shape);
+				byte flags = 0;
+				if (s.FacesEastWest) flags |= 1;
+				if (s.Flip)          flags |= 2;
+				writer.Write(flags);
+			}
+		}
+
+		// Seek back and write the real level offsets.
+		stream.Seek(offsetTablePos, SeekOrigin.Begin);
+		foreach (uint offset in offsets)
+			writer.Write(offset);
+	}
+
 	// ── File-path convenience wrapper ────────────────────────────────────────
 
 	/// <summary>
-	/// Converts the 10 KOD level files into GAMEMAPS.KOD and MAPHEAD.KOD
+	/// Converts the 10 KOD level files into GAMEMAPS.KOD, MAPHEAD.KOD, and WALLSPAWNS.KOD
 	/// in <paramref name="outputFolder"/>.
 	/// </summary>
 	public static void WriteTo(string outputFolder, string inputFolder)
 	{
-		string levelsFolder  = Path.Combine(inputFolder, "chef", "LEVELS");
+		string levelsFolder   = Path.Combine(inputFolder, "chef", "LEVELS");
 		string kitchensFolder = Path.Combine(inputFolder, "chef", "KITCHENS");
 
 		if (!Directory.Exists(levelsFolder))
@@ -143,25 +198,28 @@ public static class GameMaps
 
 		Dictionary<string, ushort> texturePage = BuildTexturePageMap(kitchensFolder);
 
-		LevelData[] levels = new LevelData[10];
+		LevelData[]       levels            = new LevelData[10];
+		WallSpawnData[][] wallSpawnsByLevel  = new WallSpawnData[10][];
 		for (int levelNum = 1; levelNum <= 10; levelNum++)
 		{
 			string pcxPath = Path.Combine(levelsFolder, $"LEVEL{levelNum:D2}.PCX");
 			string blkPath = Path.Combine(levelsFolder, $"LEVEL{levelNum:D2}.BLK");
-			levels[levelNum - 1] = ConvertLevel(pcxPath, blkPath, texturePage, levelNum);
+			(levels[levelNum - 1], wallSpawnsByLevel[levelNum - 1])
+				= ConvertLevel(pcxPath, blkPath, texturePage, levelNum);
 		}
 
-		string gameMapsPath = Path.Combine(outputFolder, "GAMEMAPS.KOD");
-		string mapHeadPath  = Path.Combine(outputFolder, "MAPHEAD.KOD");
+		string gameMapsPath   = Path.Combine(outputFolder, "GAMEMAPS.KOD");
+		string mapHeadPath    = Path.Combine(outputFolder, "MAPHEAD.KOD");
+		string wallSpawnsPath = Path.Combine(outputFolder, "WALLSPAWNS.KOD");
 
-		using (FileStream gmStream = new(gameMapsPath, FileMode.Create))
-		using (FileStream mhStream = new(mapHeadPath,  FileMode.Create))
+		using (FileStream gmStream = new(gameMapsPath,   FileMode.Create))
+		using (FileStream mhStream = new(mapHeadPath,    FileMode.Create))
+		using (FileStream wsStream = new(wallSpawnsPath, FileMode.Create))
 		{
 			uint[] offsets = WriteGameMaps(gmStream, levels);
 			WriteMapHead(mhStream, offsets);
+			WriteWallSpawns(wsStream, wallSpawnsByLevel);
 		}
-
-		Console.WriteLine($"Written 10 levels to {gameMapsPath} and {mapHeadPath}");
 	}
 
 	// ── Compression ──────────────────────────────────────────────────────────
@@ -179,7 +237,7 @@ public static class GameMaps
 		while (i < data.Length)
 		{
 			ushort value = data[i];
-			int    count = 1;
+			int count = 1;
 			while (i + count < data.Length && data[i + count] == value)
 				count++;
 
@@ -220,8 +278,8 @@ public static class GameMaps
 		int i = 0;
 		while (i < data.Length)
 		{
-			ushort word     = data[i];
-			byte   wordHigh = (byte)(word >> 8);
+			ushort word = data[i];
+			byte wordHigh = (byte)(word >> 8);
 
 			// Search for a NEAR back-reference: last ≤255 words, count ≥2 (cost 3 bytes)
 			int bestNearLen = 0, bestNearOffset = 0;
@@ -238,7 +296,7 @@ public static class GameMaps
 
 				if (len >= 2 && len > bestNearLen)
 				{
-					bestNearLen    = len;
+					bestNearLen = len;
 					bestNearOffset = offset;
 					if (bestNearLen >= 16) break; // good enough; stop searching
 				}
@@ -303,12 +361,12 @@ public static class GameMaps
 
 	// ── KOD level conversion ─────────────────────────────────────────────────
 
-	private static LevelData ConvertLevel(
+	private static (LevelData levelData, WallSpawnData[] wallSpawns) ConvertLevel(
 		string pcxPath, string blkPath,
 		Dictionary<string, ushort> texturePage, int levelNum)
 	{
 		(int startX, int startY, int heading) = ParseBlkHeader(blkPath);
-		Dictionary<int, BlockDef> blocks = ParseBlkBlocks(blkPath);
+		(Dictionary<int, BlockDef> blocks, HashSet<int> thingIds) = ParseBlkBlocks(blkPath);
 
 		using FileStream pcxStream = File.OpenRead(pcxPath);
 		byte[] grid = VSwap.DecodePcxRle(pcxStream, GridSize);
@@ -320,6 +378,9 @@ public static class GameMaps
 		ushort[] objectPlane = new ushort[width * height];
 		ushort[] otherPlane  = new ushort[width * height]; // all zeros
 
+		// Track which cells are passable floors for wall-face detection below.
+		bool[] isFloor = new bool[width * height];
+
 		for (int y = 0; y < height; y++)
 			for (int x = 0; x < width; x++)
 			{
@@ -329,12 +390,18 @@ public static class GameMaps
 
 				if (!reachable.Contains((gridX, gridY)))
 				{
-					wallPlane[mapIdx] = 1; // void or unreachable → default wall tile
+					wallPlane[mapIdx] = 1; // void or unreachable → solid wall
 					continue;
 				}
 
 				byte blockId = grid[gridY * GridSize + gridX];
-				wallPlane[mapIdx] = MapBlockToWallTile(blockId, blocks, texturePage);
+				// Thing IDs are passable entities (enemies/items), not geometry.
+				// Treat as floor tile (0) so collision and wall-face detection work correctly.
+				bool passable = blockId == 0
+					|| thingIds.Contains(blockId)
+					|| (blocks.TryGetValue(blockId, out BlockDef? def) && def.IsPassable);
+				wallPlane[mapIdx] = passable ? (ushort)0 : (ushort)1;
+				isFloor[mapIdx]   = passable;
 			}
 
 		// Place player spawn in the object plane
@@ -343,13 +410,60 @@ public static class GameMaps
 		if (spawnX >= 0 && spawnY >= 0 && spawnX < width && spawnY < height)
 			objectPlane[spawnY * width + spawnX] = HeadingToSpawnCode(heading);
 
-		return new LevelData(
-			Name:        $"LEVEL{levelNum:D2}",
-			Width:       width,
-			Height:      height,
-			WallPlane:   wallPlane,
-			ObjectPlane: objectPlane,
-			OtherPlane:  otherPlane
+		// Bake per-face wall spawns.
+		// KOD's I3D engine assigns distinct textures to each cardinal face of each block
+		// (n_wall, e_wall, s_wall, w_wall in .BLK files). For each solid cell, emit one
+		// WallSpawnData per face that borders a passable floor cell.
+		//
+		// Face mapping (Wolf3D coords: +X = east, +Y = south):
+		//   West face  (w_wall): wall at x,   floor at x-1  → FacesEastWest=true,  Flip=false
+		//   East face  (e_wall): wall at x,   floor at x+1  → FacesEastWest=true,  Flip=true
+		//   North face (n_wall): wall at y,   floor at y-1  → FacesEastWest=false, Flip=true
+		//   South face (s_wall): wall at y,   floor at y+1  → FacesEastWest=false, Flip=false
+		List<WallSpawnData> wallSpawnList = [];
+		for (int y = 0; y < height; y++)
+			for (int x = 0; x < width; x++)
+			{
+				if (isFloor[y * width + x]) continue; // skip passable cells
+
+				int gridX  = minX + x;
+				int gridY  = minY + y;
+				byte blockId2 = reachable.Contains((gridX, gridY))
+					? grid[gridY * GridSize + gridX]
+					: (byte)0;
+				blocks.TryGetValue(blockId2, out BlockDef? bd);
+
+				// West face: floor to the west
+				if (x > 0 && isFloor[y * width + (x - 1)])
+					wallSpawnList.Add(new WallSpawnData((ushort)x, (ushort)y,
+						GetFacePage(bd, bd?.WWall, texturePage), true, false));
+
+				// East face: floor to the east
+				if (x < width - 1 && isFloor[y * width + (x + 1)])
+					wallSpawnList.Add(new WallSpawnData((ushort)x, (ushort)y,
+						GetFacePage(bd, bd?.EWall, texturePage), true, true));
+
+				// North face: floor to the north
+				if (y > 0 && isFloor[(y - 1) * width + x])
+					wallSpawnList.Add(new WallSpawnData((ushort)x, (ushort)y,
+						GetFacePage(bd, bd?.NWall, texturePage), false, true));
+
+				// South face: floor to the south
+				if (y < height - 1 && isFloor[(y + 1) * width + x])
+					wallSpawnList.Add(new WallSpawnData((ushort)x, (ushort)y,
+						GetFacePage(bd, bd?.SWall, texturePage), false, false));
+			}
+
+		return (
+			new LevelData(
+				Name:        $"LEVEL{levelNum:D2}",
+				Width:       width,
+				Height:      height,
+				WallPlane:   wallPlane,
+				ObjectPlane: objectPlane,
+				OtherPlane:  otherPlane
+			),
+			[.. wallSpawnList]
 		);
 	}
 
@@ -360,7 +474,7 @@ public static class GameMaps
 		FloodFill(byte[] grid, int startX, int startY)
 	{
 		HashSet<(int, int)> visited = [];
-		Queue<(int, int)>   queue   = new();
+		Queue<(int, int)> queue = new();
 
 		if (grid[startY * GridSize + startX] != VoidCell)
 		{
@@ -399,7 +513,7 @@ public static class GameMaps
 	// ── BLK file parsing ─────────────────────────────────────────────────────
 
 	private record BlockDef(
-		bool   IsPassable,
+		bool IsPassable,
 		string NWall, string EWall, string SWall, string WWall
 	);
 
@@ -417,23 +531,24 @@ public static class GameMaps
 				startY = ParseIntAfterColon(line);
 			else if (line.StartsWith("Player start heading", StringComparison.OrdinalIgnoreCase))
 				heading = ParseIntAfterColon(line);
-			else if (line.StartsWith("block ",  StringComparison.OrdinalIgnoreCase)
-				||   line.StartsWith("thing ",  StringComparison.OrdinalIgnoreCase)
-				||   line.StartsWith("action ", StringComparison.OrdinalIgnoreCase))
+			else if (line.StartsWith("block ", StringComparison.OrdinalIgnoreCase)
+				|| line.StartsWith("thing ", StringComparison.OrdinalIgnoreCase)
+				|| line.StartsWith("action ", StringComparison.OrdinalIgnoreCase))
 				break; // past the header section
 		}
 
 		return (startX, startY, heading);
 	}
 
-	private static Dictionary<int, BlockDef> ParseBlkBlocks(string blkPath)
+	private static (Dictionary<int, BlockDef> blocks, HashSet<int> thingIds) ParseBlkBlocks(string blkPath)
 	{
 		Dictionary<int, BlockDef> blocks = [];
+		HashSet<int> thingIds = [];
 
-		bool   inEntry   = false;
-		bool   isThing   = false;
-		int    currentId = -1;
-		bool   isPassable = false;
+		bool inEntry = false;
+		bool isThing = false;
+		int currentId = -1;
+		bool isPassable = false;
 		string nWall = "", eWall = "", sWall = "", wWall = "";
 
 		foreach (string rawLine in File.ReadLines(blkPath))
@@ -446,14 +561,22 @@ public static class GameMaps
 				if (TryParseEntryStart(line, "block", out int id))
 				{
 					currentId = id;
-					inEntry   = true;
-					isThing   = false;
+					inEntry = true;
+					isThing = false;
 					isPassable = false;
 					nWall = eWall = sWall = wWall = "";
 				}
-				else if (line.StartsWith("thing ",  StringComparison.OrdinalIgnoreCase)
-					||   line.StartsWith("action ", StringComparison.OrdinalIgnoreCase)
-					||   line.StartsWith("anim ",   StringComparison.OrdinalIgnoreCase))
+				else if (line.StartsWith("thing ", StringComparison.OrdinalIgnoreCase))
+				{
+					// Record the thing's block ID so it is treated as a floor (passable)
+					// during wall-plane conversion. Things are enemies/items, not geometry.
+					if (TryParseEntryStart(line, "thing", out int thingId))
+						thingIds.Add(thingId);
+					inEntry = true;
+					isThing = true;
+				}
+				else if (line.StartsWith("action ", StringComparison.OrdinalIgnoreCase)
+					|| line.StartsWith("anim ", StringComparison.OrdinalIgnoreCase))
 				{
 					inEntry = true;
 					isThing = true;
@@ -482,7 +605,7 @@ public static class GameMaps
 			}
 		}
 
-		return blocks;
+		return (blocks, thingIds);
 	}
 
 	private static bool TryParseEntryStart(string line, string keyword, out int id)
@@ -506,7 +629,7 @@ public static class GameMaps
 		foreach (string segment in line.Split(';'))
 		{
 			string seg = segment.Trim();
-			int    eq  = seg.IndexOf('=');
+			int eq = seg.IndexOf('=');
 			if (eq < 0) continue;
 			string key = seg[..eq].Trim().ToLowerInvariant();
 			string val = seg[(eq + 1)..].Trim();
@@ -538,39 +661,38 @@ public static class GameMaps
 
 	// ── Tile mapping helpers ─────────────────────────────────────────────────
 
-	private static ushort MapBlockToWallTile(
-		byte blockId,
-		Dictionary<int, BlockDef> blocks,
+	/// <summary>
+	/// Returns the VSWAP page index for a specific face texture path.
+	/// Falls back to the first non-empty face on the block definition, then page 0.
+	/// </summary>
+	private static ushort GetFacePage(
+		BlockDef? def, string? faceTexPath,
 		Dictionary<string, ushort> texturePage)
 	{
-		if (blockId == 0) return 0; // open floor
-
-		if (!blocks.TryGetValue(blockId, out BlockDef? def)) return 1; // unknown → default wall
-		if (def.IsPassable) return 0;
-
-		// Prefer n_wall; fall back through other faces
-		string texPath = def.NWall.Length > 0 ? def.NWall
-			: def.EWall.Length > 0 ? def.EWall
-			: def.SWall.Length > 0 ? def.SWall
-			: def.WWall;
-
-		if (texPath.Length == 0) return 1;
-
+		string? texPath = faceTexPath?.Length > 0 ? faceTexPath
+			: def != null ? FirstNonEmpty(def.NWall, def.EWall, def.SWall, def.WWall)
+			: null;
+		if (texPath == null || texPath.Length == 0) return 0;
 		// Texture path is like "kitchens\fifts_00" — extract just the filename
 		string texName = Path.GetFileName(texPath).ToLowerInvariant();
+		return texturePage.TryGetValue(texName, out ushort page) ? page : (ushort)0;
+	}
 
-		return texturePage.TryGetValue(texName, out ushort pageIndex)
-			? (ushort)(pageIndex + 1) // tile 0 = floor; tile 1+ = VSWAP page + 1
-			: (ushort)1;              // texture not in KITCHENS (e.g. MISC) → default wall
+	private static string? FirstNonEmpty(string? a, string? b, string? c, string? d)
+	{
+		if (a?.Length > 0) return a;
+		if (b?.Length > 0) return b;
+		if (c?.Length > 0) return c;
+		return d?.Length > 0 ? d : null;
 	}
 
 	// I3D heading (blk file) → Wolf3D object-plane spawn code (WL_MAIN.C:SpawnPlayer)
 	private static ushort HeadingToSpawnCode(int heading) => heading switch
 	{
-		64  => SpawnEast,
+		64 => SpawnEast,
 		128 => SpawnSouth,
 		192 => SpawnWest,
-		_   => SpawnNorth, // 0 = north; default for unexpected values
+		_ => SpawnNorth, // 0 = north; default for unexpected values
 	};
 
 	/// <summary>
